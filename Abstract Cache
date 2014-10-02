@@ -1,0 +1,228 @@
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+#include <ctype.h>
+
+//Functions:
+int offsetLength(unsigned int);
+int setIndexLength(unsigned int);
+int tagBits(unsigned int);
+int getnumberOfSets (int blockSize, int numberOfWays, int cacheSize);
+int whichSet(unsigned int);
+int hitWay(unsigned int);
+void updateOnHit(unsigned int);
+void updateOnMiss(unsigned int);
+
+//Global Variables
+int blockSize, numberOfWays, cacheSize;
+int **tagArray, **lruArray;
+
+
+int main()
+{
+  printf("Enter the Block Size\n");
+  scanf("%d", &blockSize);
+  assert(blockSize % 2==0);
+  printf("enter the number of Ways\n");
+  scanf("%d", &numberOfWays);
+  assert(numberOfWays % 2==0);
+  printf("enter the size of the cache\n");
+  scanf("%d", &cacheSize);
+  assert(cacheSize% 2==0);
+  char filename[100];
+  printf("enter the file path\n");
+  scanf("%s", filename);
+
+
+  int numberOfSets = getnumberOfSets(blockSize,numberOfWays,cacheSize);
+    
+    //creates the array
+    tagArray = (int **)malloc(numberOfSets*sizeof(int *));
+    lruArray = (int **)malloc(numberOfSets*sizeof(int *));
+
+    int i = 0;
+    while (i<numberOfSets){
+        tagArray[i] =(int *)malloc(numberOfWays*sizeof(int));
+        lruArray[i] = (int *)malloc(numberOfWays*sizeof(int));
+        
+        int j;
+         for(j=0;j<numberOfWays;j++){       //inserts a -1 into every spot of the lruArray
+            lruArray[i][j]= -1;
+        }
+    i++;
+    }
+
+    FILE *file = NULL;
+    int address, way;
+    int hits = 0;
+    int misses = 0;
+    double accesses=0;
+
+    file= fopen(filename, "r");  //start to read in the file parsing by every line
+    while (!feof(file))
+    {
+     fscanf(file, "%d", &address);
+        printf("%d\n", address);
+       
+        way = hitWay(address);
+        if (way == -1)
+        {
+            updateOnMiss(address);
+            misses++;
+            accesses++;
+        }
+        else
+        {
+            updateOnHit(address);
+            hits++;
+            accesses++;
+        }
+    }
+    fclose(file);
+    printf("Miss rate: %f\n", (double)(misses)/(double)(accesses));
+
+    free(tagArray);
+    free(lruArray);
+
+}
+
+//This is the offsetLength funciton.  It will take an int value and return the offest length of the value given.
+//The value passed in will be the blocksize
+
+int offsetLength(unsigned int b){
+
+	int offset;
+
+	offset=log(b)/log(2);
+	return offset;
+
+}
+// This function is the setIndexLength function.
+//This function will determine the number of set bits in the address
+//the value passed in will be the number of sets
+
+int setIndexLength(unsigned int s)
+{
+    int index;
+
+    index=log(s)/log(2);
+
+    return index;
+}
+
+// This is the tagBits function it returns the tag bits with the offset and the index taken off
+
+int tagBits(unsigned int address)
+{
+    int addr=address;
+    int offsets = offsetLength(blockSize) + setIndexLength(getnumberOfSets(blockSize,numberOfWays,cacheSize));
+    return addr>>offsets;
+    
+}
+//this is the getnumberOfSets function this function determines the number of sets by the provided inputs from the user
+//l-->blocksize; k--> is number of ways  c--> is cache size
+int getnumberOfSets (int l, int k, int c)      
+{
+    int sets = c/(l*k);
+    return sets;
+}
+
+//This is the whichSet function it takes in an address and returns which set that addresss is located in
+
+int whichSet(unsigned int trace)  {
+    unsigned int offsetlength = offsetLength(blockSize);
+    unsigned int indextag = trace>>offsetlength;
+    unsigned int indexLength = setIndexLength(getnumberOfSets(blockSize,numberOfWays,cacheSize));
+    unsigned int mask = 1;
+    unsigned int i;
+    for(i = 1; i < indexLength; i++) {
+        mask = mask << 1;
+        mask = mask | 1;
+    }
+    unsigned int index = indextag & mask;
+    return index;
+  }
+
+
+//This is the hitWay funciton it will take in an address and return the Way the address is located in if there is a hit
+  //Or it will return -1 if there is not a hit i.e. a miss
+
+int hitWay(unsigned int address){
+    int set = whichSet(address);
+    int tag = tagBits(address);
+    int whichWay = 0;
+    while(whichWay < numberOfWays)
+    {
+        if(tagArray[set][whichWay] == tag){
+            printf("prints the way: %d\n", whichWay);
+            return whichWay;
+
+        }
+        else
+        {
+            whichWay++;
+        }
+    
+    }
+    printf("Returning -1\n");
+    return -1;
+
+}
+
+//This is the update on hit function.  It will take in an address and update the lruArray, this function will only be called if there is a hit
+
+void updateOnHit(unsigned int address) {
+    unsigned int tag = tagBits(address);
+    unsigned int index = whichSet(address);
+    unsigned int way = hitWay(address);
+    unsigned int i;
+    for (i = 0; i < numberOfWays; i++) {
+        if (lruArray[index][i] > 0) {
+            lruArray[index][i]++;
+        }
+    }   
+    lruArray[index][way] = 1;
+}
+
+//This is the updateOnMiss function
+
+void updateOnMiss(unsigned int address){
+    unsigned int tag = tagBits(address);
+    unsigned int index = whichSet(address);
+    unsigned int i;
+    unsigned int temp;
+    unsigned int indexOfHighestValue;
+    
+    int a = 0;
+    int i;
+    for (i = 0; i < numberOfWays; i++) {
+        if (lruArray[index][i] == -1) {  // Check if there's a -1
+            a = 1;
+            tagArray[index][i]=tag;
+            break;
+        }
+    }
+    
+    if (a == 0) {  // There are no -1s in the set
+        int indexOfHighestValue = 0;
+        int highestValue = lruArray[index][0]; 
+        for (int i = 1; i < numberOfWays; i++) {
+            int nextData = lruArray[index][i];       // Holds the value at index 1 initially            
+            if (highestValue < nextData) {                // If the next value is higher than the first
+                highestValue = nextData;                    // Save the next value into the highestValue
+                indexOfHighestValue = i;                    // Keeps track of the index that has the highest value
+            }                                               // If highestValue > nextData, highestValue stays the same and so does the index.
+         }                                               
+     }                                                  
+
+    for (i = 0; i < numberOfWays; i++) { //updates lru array
+        if (lruArray[index][i] > 0) {
+            lruArray[index][i]++;
+        }
+    }   
+    lruArray[index][indexOfHighestValue]= 1;//saves a one into the position of the lruArray which is same position to the most updated tagArray position
+
+}
+
